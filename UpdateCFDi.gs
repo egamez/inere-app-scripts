@@ -1,109 +1,126 @@
-// Copyright (c) 2013, Lae,
-//                     Enrique Gámez <egamezf@gmail.com>
-//
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// - Redistributions of source code must retain the above copyright notice,
-//   this list of conditions and the following disclaimer.
-// - Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-//
-// The main pourpouse of this script is to organize the information,
-// sent as file attachments on an emai, corresponding to a electronic
-// invoices in Mexico (CFD or CFDi).
-//
-// With organize I meant,
-//
-//     - Save the CFD instance, and possibly its printed version
-//       on Google Drive,
-//     - Archive the email under some defined labels, and
-//     - Store some brief information of the CFD on a Google Spreadsheet.
-//
-// The default behavior of the script is to store all the file attachments
-// under the folder "Compras" (through the variable 'root_folder'), archive
-// all the messages under the label "Gastos" (variable 'default_label') on
-// the mailbox, and to create the spreadsheets with the prefix name
-// "Reporte-Compras" (variable 'root_name'). The user can modify those
-// names through the values of the variables mentioned.
-//
-// If the user wants to archive the messages under some different mailbox
-// labels (one per message) can define those labels using User Properties.
-// The rule to do so, it is by creating a property with the R.F.C. as the
-// key, and the label name as its value, i.e. if you create a property
-// with:
-//
-//        Key: AAAA010101AA
-//      Value: Oficina
-//
-// the script will archive all the CFDs which emisor has R.F.C. 'AAAA010101AAA'
-// under the mailbox label 'Oficina'.
-//
-// All the CFD instances (and their printend versions, if any) will be
-// saved on Google Drive, under the folder name, given as the value of
-// the variable 'root_folder', and the structure will be the following:
-//
-//      [root_folder]/
-//            [emision-year-number]/
-//                    [emision-month-number]
-//
-// The 'emision-year-number' and 'emision-month-number' will be inferred
-// from the CFD itself, and will be created (if necesary) on the fly.
-//
-// The spreadsheet, that will also be created, will contain the following
-// information (one row, per CDF succesfully parsed):
-//
-//            Information content:                         Column Label:
-//       Fecha de emision del comprobante                [Fecha emision]
-//       Version del comprobante                         [Version]
-//       Serie del comprobante                           [Serie]
-//       Folio del comprobante                           [Folio]
-//       Folio fiscal del CFDi                           [Folio Fiscal]
-//       Nombre de el proveedor                          [Proveedor]
-//       R.F.C. del proveedor                            [R.F.C.]
-//       Tipo de comprobante (Factura, Nota de Credito)  [Tipo]
-//       Monto total de los descuentos del comprobante   [Descuentos]
-//       Subtotal                                        [Subtotal]
-//       I.V.A.                                          [I.V.A.]
-//       Total                                           [Total]
-//       Fecha de recepcion del comprobante              [Recepcion]
-//       Fecha de recepcion de las mercancias            [Recepcion mercancia]
-//       Fecha de pago del comprobante                   [Fecha pago]
-//       Monto del pago                                  [Monto de pago]
-//       Observaciones                                   [Observaciones]
-//       Estado del comprobante (Vigente o Cancelado)    [Estado]
-//       Url del comprobante (printed version if any)    [Url]
-//       Col1 (columna para usos variables)              [Col1]
-//
-// This spreadsheet will be created on the fly, one per month. It is
-// worth to mention that User Properties are used to save the the
-// Spreadsheet keys of all the sheets created. No user interaction
-// is required; the User Properties created for this pourpose have
-// the signature:
-//
-//          [root_name]-[year]-[month]-key
-//
-// Bugs and comments to: egamezf@gmail.com
-//
+/**
+ * @license Copyright (c) 2013, Lae,
+ *                     Enrique Gámez <egamezf@gmail.com>
+ *
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * - Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ * - Redistributions in binary form must reproduce the above copyright notice,
+ *   this list of conditions and the following disclaimer in the documentation
+ *   and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+/**
+ * The main pourpouse of this script is to organize the information,
+ * sent as file attachments on an emai, corresponding to a electronic
+ * invoices in Mexico (CFD or CFDi).
+ *
+ * With organize I meant,
+ *
+ *     - Save the CFD instance, and possibly its printed version
+ *       on Google Drive,
+ *     - Archive the email under some defined labels, and
+ *     - Store some brief information of the CFD on a Google Spreadsheet.
+ *
+ * The default behavior of the script is to store all the file attachments
+ * under the folder "Compras" (through the variable 'root_folder'), archive
+ * all the messages under the label "Gastos" (variable 'default_label') on
+ * the mailbox, and to create the spreadsheets with the prefix name
+ * "Reporte-Compras" (variable 'root_name'). The user can modify those
+ * names through the values of the variables mentioned.
+ *
+ * If the user wants to archive the messages under some different mailbox
+ * labels (one per message) can define those labels using User Properties.
+ * The rule to do so, it is by creating a property with the R.F.C. as the
+ * key, and the label name as its value, i.e. if you create a property
+ * with:
+ *
+ *        Key: AAAA010101AA
+ *      Value: Oficina
+ *
+ * the script will archive all the CFDs which emisor has R.F.C. 'AAAA010101AAA'
+ * under the mailbox label 'Oficina'.
+ *
+ * All the CFD instances (and their printend versions, if any) will be
+ * saved on Google Drive, under the folder name, given as the value of
+ * the variable 'root_folder', and the structure will be the following:
+ *
+ *      [root_folder]/
+ *            [emision-year-number]/
+ *                    [emision-month-number]
+ *
+ * The 'emision-year-number' and 'emision-month-number' will be inferred
+ * from the CFD itself, and will be created (if necesary) on the fly.
+ *
+ * The spreadsheet, that will also be created, will contain the following
+ * information (one row, per CDF succesfully parsed):
+ *
+ *            Information content:                         Column Label:
+ *       Fecha de emision del comprobante                [Fecha emision]
+ *       Version del comprobante                         [Version]
+ *       Serie del comprobante                           [Serie]
+ *       Folio del comprobante                           [Folio]
+ *       Folio fiscal del CFDi                           [Folio Fiscal]
+ *       Nombre de el proveedor                          [Proveedor]
+ *       R.F.C. del proveedor                            [R.F.C.]
+ *       Tipo de comprobante (Factura, Nota de Credito)  [Tipo]
+ *       Monto total de los descuentos del comprobante   [Descuentos]
+ *       Subtotal                                        [Subtotal]
+ *       I.V.A.                                          [I.V.A.]
+ *       Total                                           [Total]
+ *       Fecha de recepcion del comprobante              [Recepcion]
+ *       Fecha de recepcion de las mercancias            [Recepcion mercancia]
+ *       Fecha de pago del comprobante                   [Fecha pago]
+ *       Monto del pago                                  [Monto de pago]
+ *       Observaciones                                   [Observaciones]
+ *       Estado del comprobante (Vigente o Cancelado)    [Estado]
+ *       Url del comprobante (printed version if any)    [Url]
+ *       Col1 (columna para usos variables)              [Col1]
+ *
+ * This spreadsheet will be created on the fly, one per month. It is
+ * worth to mention that User Properties are used to save the the
+ * Spreadsheet keys of all the sheets created. No user interaction
+ * is required; the User Properties created for this pourpose have
+ * the signature:
+ *
+ *          [root_name]-[year]-[month]-key
+ *
+ * Bugs and comments to: egamezf@gmail.com
+ */
 
-var root_folder   = "Compras"; // Root folder name under we will save the CFDs
-var root_name     = "Reporte-Compras"; // Base name for the sheets created.
-var default_label = "Gastos"; // Default Gmail label to archive the messages
+/**
+ * The default name for the Google Drive root folder, to store all the CFDs
+ * @const
+ * @type {string} 
+ */
+var root_folder   = "Compras";
+/**
+ * Prefix name for all the created spreadsheets.
+ * @const
+ * @type {string}
+ */
+var root_name     = "Reporte-Compras";
+/**
+ * The default Gmail label name, to archive all the messages.
+ * @const
+ * @type {string}
+ */
+var default_label = "Gastos";
 
 function update_cfdi() {
 
@@ -141,7 +158,7 @@ function update_cfdi() {
           var dia = cfdis[k].fecha.getDate().toString();
 
           // Check that the folders exist, otherwise creat it.
-          var folder = load_folder(messages[j], root_folder, ano, mes.toString());
+          var folder = load_folder(root_folder, ano, mes.toString());
 
           var cfdi_tipo = undefined;
           if ( cfdis[k].tipo == 1 ) cfdi_tipo = "Factura";
@@ -159,8 +176,8 @@ function update_cfdi() {
             // Make as if you haven't touch the message.
             messages[j].markUnread();
             // Acknowledge of the event.
-            send_report_message(messages[j], "CFD already saved",
-                                "Info", "The CFD " + cfdis[k].serie + cfdis[k].folio +
+            send_report_message("Warning", "CFD already saved!\n\n" +
+                                "The CFD " + cfdis[k].serie + cfdis[k].folio +
                                 " was previously saved/stored. We will not save it again." +
                                 "\n\nMessage details:" +
                                 "\n\tFrom:" + messages[j].getFrom() +
@@ -221,19 +238,22 @@ function update_cfdi() {
   }
 }
 
-// Helper function to load the folder in which the CFD
-// and its printed version (if any) will be saved.
-// In the requested folder doesn't exist, it will be created.
-//
-// The function requires three arguments
-//
-//      r   -- The root folder name ("Compras")
-//      a   -- The year number as String
-//      m   -- The month number as String
-//
-// The function returns a Folder object pointed
-// at the current folder.
-function load_folder(message, r, a, m) {
+/**
+ * Helper function to load the folder in which the CFD
+ * and its printed version (if any) will be saved.
+ * In the requested folder doesn't exist, it will be created.
+ *
+ * The function requires four arguments
+ *
+ * @param {string} r The root folder name ("Compras")
+ * @param {string} a The year number as String
+ * @param {string} m The month number as String
+ *
+ * The function returns a Folder object pointed
+ * at the current folder.
+ * @return {Folder}
+ */
+function load_folder(r, a, m) {
   var folders = null;
   var folder = null;
   var found = false;
@@ -251,8 +271,8 @@ function load_folder(message, r, a, m) {
 
   if ( !found ) {
     // Create one and the others beneath
-    send_report_message(message, "ROOT Folder (" + r + ") doesn't exist!",
-                         "Warning", "Creating folder \"" + r + "\" and all the others needed");
+    send_report_message("Warning", "ROOT Folder (" + r + ") doesn't exist!\n\n" +
+                                   "Creating folder \"" + r + "\" and all the others needed");
     folder = DocsList.createFolder(r);
     folder.setDescription(r);
     var tmp_folder = folder.createFolder(a);
@@ -275,8 +295,8 @@ function load_folder(message, r, a, m) {
   }
 
   if ( !found ) {
-    send_report_message(message, "Folder (" + r + "/" + a + ") doesn't exist!",
-                        "Warning", "Creating folder \"" + r + "/" + a + "\" and all the others needed.");
+    send_report_message("Warning", "Folder (" + r + "/" + a + ") doesn't exist!\n\n" +
+                                   "Creating folder \"" + r + "/" + a + "\" and all the others needed.");
     folder = DocsList.getFolder(r).createFolder(a);
     folder.setDescription(a);
     var tmp_folder = folder.createFolder(m);
@@ -296,8 +316,8 @@ function load_folder(message, r, a, m) {
   }
 
   if ( !found ) {
-    send_report_message(message, "Folder (" + r + "/" + a + "/" + m + ") doesn't exist!",
-                        "Warning", "Creating folder \"" + r + "/" + a + "/" + m + "\"");
+    send_report_message("Warning", "Folder (" + r + "/" + a + "/" + m + ") doesn't exist!\n\n" +
+                                   "Creating folder \"" + r + "/" + a + "/" + m + "\"");
     var folder = DocsList.getFolder(r + "/" + a).createFolder(m);
     folder.setDescription(m);
   }
@@ -306,18 +326,23 @@ function load_folder(message, r, a, m) {
   return folder;
 }
 
-// Helper function to verify that no CFD will be
-// saved/stored duplicated.
-// The parameters to verify that no CFD will be
-// duplicated are:
-//     - Serie
-//     - Folio
-//     - Folio fiscal (if any)
-//     - R.F.C. del emisor.
-//
-// The function will return "true" if the CFD is already
-// in the system, otherwise will return "false"
-//
+/**
+ * Helper function to verify that no CFD will be
+ * saved/stored duplicated.
+ * The parameters to verify that no CFD will be
+ * duplicated are:
+ *     - Serie
+ *     - Folio
+ *     - Folio fiscal (if any)
+ *     - R.F.C. del emisor.
+ *
+ * @param {Spreadsheet} sheet The Spreadsheet.
+ * @param {Object} cfd The CFD object representation.
+ *
+ * The function will return "true" if the CFD is already
+ * in the system, otherwise will return "false"
+ * @return {boolean}
+ */
 function check_for_duplicated(sheet, cfd) {
   var found = false;
 
@@ -334,20 +359,23 @@ function check_for_duplicated(sheet, cfd) {
   return found;
 }
 
-// Helper function to load the Spreadsheet
-// in which the info will be saved.
-// In the case where the spreadsheet doesn't
-// exist, we will create one. The list of
-// spreadsheets will be also updated.
-//
-// The function has two arguments:
-//
-//       a   The full year of the CFD, as a string
-//       m   The month number, of the CFD, as a string
-//
-// the function returns the Sheet object in which we
-// will save the CFD data.
-//
+/**
+ * Helper function to load the Spreadsheet
+ * in which the info will be saved.
+ * In the case where the spreadsheet doesn't
+ * exist, we will create one. The list of
+ * spreadsheets will be also updated.
+ *
+ * The function has two arguments:
+ *
+ * @param {string} a The full year of the CFD, as a string
+ * @param {string} m The month number, of the CFD, as a string
+ *
+ * the function returns the Sheet object in which we
+ * will save the CFD data.
+ *
+ * @return {Spreadsheet}
+ */
 function load_reporte_sheet(a, m) {
 
   var base_name = root_name + "-" + a + "-" + m;
@@ -376,27 +404,30 @@ function load_reporte_sheet(a, m) {
   return sheet;
 }
 
-// This function it is meant to seek in the User Properties
-// the Gmail mailbox label name under the message will be archived.
-//
-// To properties (defined by the user) must have as key the
-// R.F.C., and its value the Gmail mailbox label. For instance,
-// the user may define the property key
-//
-//           XAXX010101111
-//
-// with value
-//
-//           GastosPersonales
-//
-// In case that label doesn't exist, it will be created.
-//
-// Aguments:
-//            A string object with the R.F.C.
-// Returns:
-//            A string object with the label name
-//            (default 'default_label' variable.)
-//
+/**
+ * This function it is meant to seek in the Script Properties
+ * the Gmail mailbox label name under the message will be archived.
+ *
+ * To properties (defined by the user) must have as key the
+ * R.F.C., and its value the Gmail mailbox label. For instance,
+ * the user may define the property key
+ *
+ *           XAXX010101111
+ *
+ * with value
+ *
+ *           GastosPersonales
+ *
+ * In case that label doesn't exist, it will be created.
+ *
+ * Aguments:
+ * @param {string} rfc A string object with the R.F.C.
+ * Returns:
+ *            A string object with the label name
+ *            (default 'default_label' variable.)
+ *
+ * @return {string}
+ */
 function get_label_name(rfc) {
 
   // Load the user key value
@@ -413,27 +444,32 @@ function get_label_name(rfc) {
       break;
     }
   }
-  if ( found != true ) {
+  if ( ! found ) {
     GmailApp.createLabel(label);
   }
   return label;
 }
 
-// This function will parse the file attachments
-// in the GmailMessage object and try to associate them
-// to a CFD/CFDi instances, in case that those attachments
-// are so.
-//
-// The function will also try to save the CFD/CFDi printed
-// version only if the file name (without file extension)
-// is the same as the CFD/CFDi instance.
-//
-// Arguments:
-//           m         A GmailMessage object
-// Returns:
-//           An array of CFD/CFDis parsed from the
-//           message attachments.
-//
+/**
+ * This function will parse the file attachments
+ * in the GmailMessage object and try to associate them
+ * to a CFD/CFDi instances, in case that those attachments
+ * are so.
+ *
+ * The function will also try to save the CFD/CFDi printed
+ * version only if the file name (without file extension)
+ * is the same as the CFD/CFDi instance.
+ *
+ * @struct
+ *
+ * Arguments:
+ * @param {GmailMessage} m A GmailMessage object
+ * Returns:
+ *           An array of CFD/CFDis parsed from the
+ *           message attachments.
+ *
+ * @return {Array.<Object>}
+ */
 function parse_cfdi(m) {
 
   var facturas = []; // Array of documents.
@@ -553,10 +589,14 @@ function parse_cfdi(m) {
   return result;
 }
 
-// Helper function to send to a mailbox
-// some error/warning messages
-function send_report_message(message, error, level, info) {
+/**
+ * Helper function to send to a mailbox
+ * some error/warning messages
+ * @param {string} level type of the message.
+ * @param {string} description of the message.
+ */
+function send_report_message(level, description) {
   GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
-                     "UpdateCFDi.gs: " + level + ": " + message.getSubject(), error + "\n" +
-                     "Guarda-CFD/CFDi: Automatic message.\n\n" + info);
+                     "UpdateCFDi.gs Automatic message: " + level,
+                     "Guarda-CFD/CFDi: Automatic message.\n\n" + description);
 }
