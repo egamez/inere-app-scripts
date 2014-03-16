@@ -1,0 +1,714 @@
+/**
+ * @license Copyright (c) 2014, L3a,
+ *                              Enrique Gámez <egamezf@gmail.com>
+ *
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * - Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ * - Redistributions in binary form must reproduce the above copyright notice,
+ *   this list of conditions and the following disclaimer in the documentation
+ *   and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+/**
+ * The main pourpouse of this script is to organize the information,
+ * sent as file attachments on an email, corresponding to a electronic
+ * invoices in Mexico (CFDi).
+ *
+ * With organize I meant,
+ *
+ *     - Save the CFD instance, and possibly its printed version
+ *       on Google Drive folder,
+ *     - Archive the email under some predefined labels, and
+ *     - Store some brief information of the CFDi on a Google Spreadsheet.
+ *
+ * The default behavior of the script is to store all the file attachments
+ * under the folder "Compras" (through the variable 'root_folder'), archive
+ * all the messages under the label "Gastos" (variable 'default_label') on
+ * the mailbox, and to create the spreadsheets with the prefix name
+ * "Reporte-Compras" (variable 'root_name'). The user can modify those
+ * names through the values of the variables mentioned.
+ *
+ * If the user wants to archive the messages under some different mailbox
+ * labels can accomplish that by defining those labels using the
+ * script User Properties.
+ * The rule to do so, it is by creating a property with the R.F.C. as the
+ * key, and the mailbox label name as its value, i.e. if you create a property
+ * with:
+ *
+ *        Key: AAAA010101AA
+ *      Value: Oficina
+ *
+ * the script will archive all the CFDis which emisor has R.F.C. 'AAAA010101AAA'
+ * under the mailbox label 'Oficina'.
+ *
+ * All the CFD instances (and their printend versions, if any) will be
+ * saved on Google Drive, under the folder name, given as the value of
+ * the variable 'root_folder', and the structure will be the following:
+ *
+ *      [root_folder]/
+ *            [emision-year-number]/
+ *                    [emision-month-number]
+ *
+ * The 'emision-year-number' and 'emision-month-number' will be inferred
+ * from the CFDi itself, and will be created (if necesary) on the fly.
+ *
+ * The spreadsheet, that will also be created, will contain the following
+ * information (one row, per CDF succesfully parsed):
+ *
+ *            Information content:                         Column Label:
+ *       Fecha de emision del comprobante                [Fecha emisión]
+ *       Versión del comprobante                         [Versión]
+ *       Serie del comprobante                           [Serie]
+ *       Folio del comprobante                           [Folio]
+ *       Folio fiscal del CFDi                           [Folio Fiscal]
+ *       Nombre de el proveedor                          [Proveedor]
+ *       R.F.C. del proveedor                            [R.F.C.]
+ *       Tipo de comprobante (ingreso, egreso)           [Tipo]
+ *       Monto total de los descuentos del comprobante   [Descuentos]
+ *       Subtotal                                        [Subtotal]
+ *       Total de los impuestos trasladados              [Impuestos]
+ *       Total                                           [Total]
+ *       Fecha de recepción del comprobante              [Recepción]
+ *       Estado del comprobante (Vigente o Cancelado)    [Estado]
+ *       Url del comprobante                             [XML-Url]
+ *       Url del comprobante (printed version if any)    [PDF-Url]
+ *
+ * This spreadsheet will be created on the fly, one per month. It is
+ * worth to mention that User Properties are used to save the the
+ * Spreadsheet keys of all the sheets created. No user interaction
+ * is required; the User Properties created for this pourpose have
+ * the signature:
+ *
+ *          [root_name]-[year]-[month]-key
+ *
+ * ATTENTION.
+ * The script will only try to archive the CFDis which have
+ * been created with R.F.C. code defined in the global variable
+ * 'our_rfc', so it is important to set this variable to a proper
+ * value before running the script. The default value for this
+ * variable is the generic R.F.C. code "XAXX010101000"
+ *
+ * Bugs and comments to: egamezf@gmail.com
+ */
+
+/**
+ * The default name for the Google Drive root folder, to store all the CFDs
+ * @const
+ * @type {string} 
+ */
+var root_folder   = "Compras";
+/**
+ * Prefix name for all the created spreadsheets.
+ * @const
+ * @type {string}
+ */
+var root_name     = "Reporte-Compras";
+/**
+ * The default Gmail label name, to archive all the messages.
+ * @const
+ * @type {string}
+ */
+var default_label = "Gastos";
+/**
+ * Our R.F.C. code
+ * @const
+ * @type {string}
+ */
+var our_rfc = "XAXX010101000";
+/**
+ * CFDi actual version
+ * @const
+ * @type {string}
+ */
+var cfdi_version = "3.2";
+
+
+function ArchivaCFDi()
+{
+
+  // Get the inbox thread
+  var cfdis = null,
+      messages = null,
+      folder = null,
+      sheet = null,
+      pdf_file = null,
+      pdf_url = null,
+      xml_file = null,
+      label = null,
+      threads = GmailApp.getInboxThreads();
+
+  // Loop over all the messages in the inbox thread.
+  for (var i = 0; i < threads.length; i++) {
+    messages = threads[i].getMessages();
+
+    // Inspect every message in the collection if they has any attachment.
+    for (var j = 0; j < messages.length; j++) {
+
+      // Just parse those messages with attachments
+      if ( messages[j].getAttachments().length > 0 ) {
+        // This is because usually the CFDis come always
+        // as file attachments.
+        cfdis = null;
+
+        // Create an array of CFDi objects. One array
+        // per message
+        cfdis = ExtractCFDis(messages[j]);
+
+        // Now, you need to process avery CFDi in the current message
+        for (var k = 0; k < cfdis.length; k++) {
+          // Reset some variables
+          folder = null, sheet = null, pdf_file = null, pdf_url = null, xml_file = null, label = null;
+
+          if ( cfdis[k].comprobante === null ) {
+            // Make as if you haven't touch the message.
+            messages[j].markUnread();
+            continue;
+          }
+
+          // Now, check if the exists a folder to put the CFDi itself
+          // and its printed version, if any
+          folder = LoadFolder(root_folder, cfdis[k].anio, cfdis[k].mes);
+          if ( folder == null ) {
+            // An error did occur, acknowledge
+            SendReportMessage("Atención", "¡No fue posible cargar/crear el folder!\n\n" +
+                              "No fue posible crear o cargar el (o los) folder(s)" +
+                              "\nrequerido(s) para almacenar el CFDi.\n" +
+                              "\nEl siguiente mensaje no sera procesado:\n\n" +
+                              "\n\tDe:" + messages[j].getFrom() +
+                              "\n\tPara: " + messages[j].getTo() +
+                              "\n\tAsunto: " + messages[j].getSubject() +
+                              "\n\n\tEmisor: " + cfdis[k].proveedor +
+                              "\n\tR.F.C.: " + cfdis[k].rfc +
+                              "\n\tFecha de emisión: " + cfdis[k].fecha);
+            continue;
+          }
+
+          // Now, load, or create the spreadsheet object to write
+          // or update an abstract of the CFDi
+          sheet = LoadReporteSheet(cfdis[k].anio, cfdis[k].mes);
+          if ( sheet == null ) {
+            // An error did occur, acknowledge
+            SendReportMessage("Atención", "¡No fue posible cargar/crear la hoja de datos!\n\n" +
+                              "No fue posible crear o cargar la hoja de datos" +
+                              "\nutilizada para almacenar algunos datos del CFDi.\n" +
+                              "\nEl siguiente mensaje no sera procesado:\n\n" +
+                              "\n\tDe:" + messages[j].getFrom() +
+                              "\n\tPara: " + messages[j].getTo() +
+                              "\n\tAsunto: " + messages[j].getSubject() +
+                              "\n\n\tEmisor: " + cfdis[k].proveedor +
+                              "\n\tR.F.C.: " + cfdis[k].rfc +
+                              "\n\tFecha de emisión: " + cfdis[k].fecha);
+            continue;
+          }
+
+          // Check if you already have analized this CFDi
+          if ( CheckForDuplicated(sheet, cfdis[k]) ) {
+            // Make as if you haven't touch the message.
+            messages[j].markUnread();
+            // Acknowledge of the event.
+            SendReportMessage("Atención", "¡CFDi previamente almacenado!\n\n" +
+                                "El CFDi " + cfdis[k].serie + cfdis[k].folio +
+                                " ya fue guardado/almacenado previamente." +
+                                " No realizaremos ninguna acción." +
+                                "\n\nDetalles del mensaje que contiene el CFD en cuestión:" +
+                                "\n\tDe:" + messages[j].getFrom() +
+                                "\n\tPara: " + messages[j].getTo() +
+                                "\n\tAsunto: " + messages[j].getSubject() +
+                                "\n\n\tEmisor: " + cfdis[k].proveedor +
+                                "\n\tR.F.C.: " + cfdis[k].rfc +
+                                "\n\tFecha de emisión: " + cfdis[k].fecha);
+            continue;
+          }
+
+          // Now start saving the documents and the info
+          // Start by saving the blobs.
+          if ( cfdis[k].pdf ) {
+            // The CFDi ready to print was present
+            pdf_file = folder.createFile(cfdis[k].pdf);
+            pdf_file.setDescription("CFD. Prov:" + cfdis[k].rfc + ", Folio: " + cfdis[k].folio +
+                                    ", Fecha: " + cfdis[k].anio + "/" + cfdis[k].mes + "/" + cfdis[k].dia);
+            pdf_url = pdf_file.getUrl();
+          }
+
+          xml_file = folder.createFile(cfdis[k].comprobante);
+          xml_file.setDescription("CFDi. Prov:" + cfdis[k].rfc + ", Folio: " + cfdis[k].folio +
+                                  ", Fecha: " + cfdis[k].ano + "/" + cfdis[k].mes + "/" + cfdis[k].dia);
+
+          // Now, save the extract to the spreadsheet
+          sheet.appendRow([cfdis[k].fecha,
+                           cfdis[k].version,
+                           cfdis[k].serie,
+                           cfdis[k].folio,
+                           cfdis[k].uuid,
+                           cfdis[k].proveedor,
+                           cfdis[k].rfc,
+                           cfdis[k].tipo,
+                           cfdis[k].descuento,
+                           cfdis[k].subtotal,
+                           cfdis[k].impuestos,
+                           cfdis[k].total,
+                           messages[j].getDate(), // Recepcion (del comprobante)
+                           "Vigente", // Estado del CFDi
+                           xml_file.getUrl(), // CFDi Url
+                           pdf_url]); // PDF-Url
+
+          // Wait for a minute to prevent timeouts
+          Utilities.sleep(1000);
+
+          // Now archive the message under the proper label
+          label = GetLabelName(cfdis[k].rfc);
+          messages[j].getThread().addLabel(GmailApp.getUserLabelByName(label)).markUnread();
+          // Archive the message.
+          messages[j].getThread().moveToArchive();
+
+        }
+      } else {
+        // This message doesn't have any attachment
+        // which probably means that was not sent to this
+        // mailbox to distribute a CFDi
+        // Make as if you haven't touch the message.
+        messages[j].markUnread();
+      }
+    }
+  }
+}
+
+/**
+ * Helper function to load the folder in which the CFD
+ * and its printed version (if any) will be saved.
+ * In the requested folder doesn't exist, it will be created.
+ *
+ * The function requires four arguments
+ *
+ * @param {string} r The root folder name ("Compras")
+ * @param {string} a The year number as String
+ * @param {string} m The month number as String
+ *
+ * The function returns a Folder object pointed
+ * at the current folder.
+ * @return {Folder}
+ */
+function LoadFolder(r, a, m)
+{
+  var folders = null,
+      folder = null,
+      found = false;
+
+  // Load the list of all folders.
+  folders = DocsList.getRootFolder().getFolders();
+
+  // Now loop over all the folders in the root directory and try to find the one we want.
+  for (var i = 0; i < folders.length; i++) {
+    if ( folders[i].getDescription() == r ) {
+      found = true;
+      break;
+    }
+  }
+
+  if ( !found ) {
+    // Create one and the others beneath
+    SendReportMessage("Atención", "¡El folder raíz (" + r + ") no existe!\n\n" +
+                                   "Se creara este folder \"" + r + "\" y todos los demás que sean necesarios.");
+    folder = DocsList.createFolder(r);
+    folder.setDescription(r);
+    var tmp_folder = folder.createFolder(a);
+    tmp_folder.setDescription(a);
+    var temp_folder = tmp_folder.createFolder(m);
+    temp_folder.setDescription(m);
+    folder = DocsList.getFolder(r + "/" + a + "/" + m);
+    return folder;
+  }
+
+  // If we are here it is because we have at least one folder 'r'.
+  // Now start with the year folder
+  found = false;
+  folders = DocsList.getFolder(r).getFolders();
+  for (var i = 0; i < folders.length; i++) {
+    if ( folders[i].getDescription() == a ) {
+      found = true;
+      break;
+    }
+  }
+
+  if ( !found ) {
+    SendReportMessage("Atención", "¡El folder (" + r + "/" + a + ") no existe!\n\n" +
+                                   "Se creara este folder \"" + r + "/" + a + "\" y todos los demás que sean necesarios.");
+    folder = DocsList.getFolder(r).createFolder(a);
+    folder.setDescription(a);
+    var tmp_folder = folder.createFolder(m);
+    tmp_folder.setDescription(m);
+    folder = DocsList.getFolder(r + "/" + a + "/" + m);
+    return folder;
+  }
+
+  // Now the month
+  found = false;
+  folders = DocsList.getFolder(r + "/" + a).getFolders();
+  for (var i = 0; i < folders.length; i++) {
+    if ( folders[i].getDescription() == m ) {
+      found = true;
+      break;
+    }
+  }
+
+  if ( !found ) {
+    SendReportMessage("Atención", "¡El folder (" + r + "/" + a + "/" + m + ") no exite!\n\n" +
+                                   "Se creara el folder \"" + r + "/" + a + "/" + m + "\"");
+    folder = DocsList.getFolder(r + "/" + a).createFolder(m);
+    folder.setDescription(m);
+  }
+
+  folder = DocsList.getFolder(r + "/" + a + "/" + m);
+  return folder;
+}
+
+/**
+ * Helper function to verify that no CFD will be
+ * saved/stored duplicated.
+ * The parameters to verify that no CFD will be
+ * duplicated are:
+ *     - Serie
+ *     - Folio
+ *     - Folio fiscal (if any)
+ *     - R.F.C. del emisor.
+ *
+ * @param {Spreadsheet} sheet The Spreadsheet.
+ * @param {Object} cfd The CFD object representation.
+ *
+ * The function will return "true" if the CFD is already
+ * in the system, otherwise will return "false"
+ * @return {boolean}
+ */
+function CheckForDuplicated(sheet, cfd)
+{
+  var found = false;
+  var data = sheet.getDataRange().getValues();
+
+  // Skip the header of the sheet
+  for (var i = 1; i < data.length; i++) {
+    // The columns to search for are: 2, 3, 4 y 6
+    if ( data[i][2].toString() === cfd.serie && data[i][3].toString() === cfd.folio &&
+         data[i][4].toString() === cfd.uuid  && data[i][6].toString() === cfd.rfc ) {
+      found = true;
+    }
+  }
+  // Load all the rows in the sheet.
+  return found;
+}
+
+/**
+ * Helper function to load the Spreadsheet
+ * in which the info will be saved.
+ * In the case where the spreadsheet doesn't
+ * exist, we will create one. The list of
+ * spreadsheets will be also updated.
+ *
+ * The function has two arguments:
+ *
+ * @param {string} a The full year of the CFD, as a string
+ * @param {string} m The month number, of the CFD, as a string
+ *
+ * the function returns the Sheet object in which we
+ * will save the CFD data.
+ *
+ * @return {Spreadsheet}
+ */
+function LoadReporteSheet(a, m)
+{
+
+  var base_name = root_name + "-" + a + "-" + m;
+  var id = UserProperties.getProperty(base_name + "-key");
+  var sheet = null;
+  if ( id != null ) {
+    // Simply load the sheet
+    sheet = SpreadsheetApp.openById(id).getActiveSheet();
+  } else {
+    // Create a sheet and save the parameters to the master ss
+    var ss = SpreadsheetApp.create(base_name);
+    // Set the table headers.
+    ss.appendRow(["Fecha emisión", "Versión", "Serie", "Folio", "Folio fiscal",
+                  "Proveedor", "R.F.C", "Tipo", "Descuentos", "Subtotal", "Impuestos",
+                  "Total", "Recepción", "Fecha pago", "XML-Url", "PDF-Url"]);
+    // Make this row looks like a header for the contains.
+    ss.getRange("A1:P1").setBackground("black").setFontColor("white");
+    id = ss.getId();
+    // Save the ss key that you just have created
+    UserProperties.setProperty(base_name + "-key", id);
+    // Now retrieve the sheet
+    sheet = ss.getActiveSheet();
+  }
+
+  return sheet;
+}
+
+/**
+ * This function it is meant to seek in the Script Properties
+ * the Gmail mailbox label name under the message will be archived.
+ *
+ * To properties (defined by the user) must have as key the
+ * R.F.C., and its value the Gmail mailbox label. For instance,
+ * the user may define the property key
+ *
+ *           XAXX010101111
+ *
+ * with value
+ *
+ *           GastosPersonales
+ *
+ * In case that label doesn't exist, it will be created.
+ *
+ * Aguments:
+ * @param {string} rfc A string object with the R.F.C.
+ * Returns:
+ *            A string object with the label name
+ *            (default 'default_label' variable.)
+ *
+ * @return {string}
+ */
+function GetLabelName(rfc)
+{
+
+  // Load the user key value
+  var label = UserProperties.getProperty(rfc);
+  if ( label === null ) label = default_label;
+
+  // The label already exist as user property. Check
+  // if there is a label in the mailbox.
+  var labels = GmailApp.getUserLabels();
+  var found = false;
+  for (var i = 0; i < labels.length; i++) {
+    if ( labels[i] === label ) {
+      found = true;
+      break;
+    }
+  }
+  if ( ! found ) {
+    GmailApp.createLabel(label);
+  }
+  return label;
+}
+
+/**
+ * This function will parse the file attachments
+ * in the GmailMessage object and try to associate them
+ * to a CFD/CFDi instances, in case that those attachments
+ * are so.
+ *
+ * The function will also try to save the CFD/CFDi printed
+ * version only if the file name (without file extension)
+ * is the same as the CFD/CFDi instance.
+ *
+ * @struct
+ *
+ * Arguments:
+ * @param {GmailMessage} m A GmailMessage object
+ * Returns:
+ *           An array of CFD/CFDis parsed from the
+ *           message attachments.
+ *
+ * @return {Array.<Object>}
+ */
+function ExtractCFDis(m)
+{
+  var name = null,
+      type = null,
+      doc = null,
+      taxes = null,
+      impuestos = 0,
+      comprobante = null,
+      namespace = null,
+      timbre = null,
+      facturas = [], // Array of documents.
+      result = [], // The array of all the cfdis
+      att = m.getAttachments();
+
+  // Parse all the attachments in the current message
+  // In case of finding one instance of a CFDi (which
+  // is application/xml MIME type)
+  for (var i = 0; i < att.length; i++) {
+    name = att[i].getName();
+    type = att[i].getContentType();
+
+    if ( type === "text/xml" || type === "application/xml" ) {
+
+      var documento = {
+        pdf_Blob: null,
+        xml_Blob: null,
+        name:    null
+      };
+      documento.name = name.substr(0, name.lastIndexOf("."));
+      documento.xml_Blob = att[i];
+      facturas.push(documento);
+    }
+  }
+
+  // Now make other loop over all the attachments
+  // to associate (if any) all the CFD instances with its printed version
+  for (var i = 0; i < att.length; i++) {
+    name = att[i].getName();
+    type = att[i].getContentType();
+
+    if ( type === "application/pdf" ) {
+      // Make a loop over all the entries in the facturas array to associte
+      // this printed version with its CFD instance.
+      for (var j = 0; j < facturas.length; j++) {
+        if ( name == facturas[j].name + ".pdf" || name == facturas[j].name + ".PDF" ) {
+          facturas[j].pdf_Blob = att[i];
+        }
+      }
+    }
+  }
+
+  // Now, parse all the real invoices (CFD/CFDis)
+  for (var i = 0; i < facturas.length; i++) {
+    var cfdi = {
+      fecha:         "", // La fecha de emisión del CFDi
+      dia:           "", // El dia en el que fue emitido el CFDi (para uso interno)
+      mes:           "", // El mes (para uso interno)
+      anio:          "", // Anio (para uso interno)
+      certificacion: "", // La fecha de certificacion del CFDi
+      rfc:           "", // Clave del R.F.C. del emisor
+      proveedor:     "", // Nombre del emisor
+      descuento:     "", // Descuentos
+      subtotal:      "", // Subtotal del CFDi
+      impuestos:     "", // Impuestos
+      total:         "", // Total
+      metodo_pago:   "", // Metodo de pago
+      folio:         "", // Folio del CFDi
+      serie:         "", // Número de serie
+      comprobante: null, // El CFDi
+      pdf:         null, // Su representación impresa
+      tipo:          "", // Tipo de comprobante ingreso, egreso
+      version:       "", // Versión del CFDi
+      uuid:          ""  // Folio fiscal
+    };
+
+    impuestos = 0, taxes = null, comprobante = null, namespace = null, timbre = null;
+    doc = XmlService.parse(facturas[i].xml_Blob.getDataAsString());
+    comprobante = doc.getRootElement();
+    namespace = comprobante.getNamespace();
+
+    // Verify that this instance is a CFD/CFDi instance.
+    if ( comprobante.getName() != "Comprobante" ) continue;
+
+    // Now, verify that the invoice was meant to us, i.e. that the R.F.C. to
+    // whom the invoice was charged is US.
+    if ( comprobante.getChild("Receptor", namespace).getAttribute("rfc").getValue() != our_rfc ) {
+    // This invoice either is not for us, or was created with erroneous information.
+      // Report it!
+      SendReportMessage("Error", "\nEl Comprobante Fiscal Digital adjunto, fue emitido" +
+                        "no para nosotros,\no fue emitido con una clave del R.F.C. incorrecto.\n" +
+                        " El R.F.C. para quien fue emitido el CFD es:" +
+                        comprobante.getChild("Receptor", namespace).getAttribute("rfc").getValue() +
+                        "\n\nA continuación algunos datos del remitente:\n\n" +
+                        "\nBuzón del remitente: " + m.getFrom() +
+                        "\nBuzón del destinatario: " + m.getTo() +
+                        "\nAsunto: " + m.getSubject() +
+                        "\nFecha: " + m.getDate());
+      // Try to star the message
+      m.star();
+      // Mark the message as unread
+      m.markUnread();
+      continue;
+    }
+
+    cfdi.proveedor   = comprobante.getChild("Emisor", namespace).getAttribute("nombre").getValue();
+    cfdi.rfc         = comprobante.getChild("Emisor", namespace).getAttribute("rfc").getValue();
+    if ( comprobante.getAttribute("serie") ) {
+      cfdi.serie       = comprobante.getAttribute("serie").getValue();
+    }
+    if ( comprobante.getAttribute("folio") ) {
+      cfdi.folio       = comprobante.getAttribute("folio").getValue();
+    }
+
+    cfdi.metodo_pago = comprobante.getAttribute("metodoDePago").getValue();
+    cfdi.fecha       = comprobante.getAttribute("fecha").getValue();
+    cfdi.anio        = cfdi.fecha.split("-")[0]
+    cfdi.mes         = cfdi.fecha.split("-")[1]
+    cfdi.dia         = cfdi.fecha.split("-")[2].substr(0, 2)
+
+    if ( comprobante.getAttribute("tipoDeComprobante") ) {
+      cfdi.tipo = comprobante.getAttribute("tipoDeComprobante").getValue();
+    }
+
+
+    cfdi.subtotal   = comprobante.getAttribute("subTotal").getValue();
+    cfdi.total      = comprobante.getAttribute("total").getValue();
+    // Now, we need to make a loop over all the taxes.
+    taxes           = comprobante.getChild("Impuestos", namespace).getChild("Traslados", namespace).getChildren("Traslado", namespace);
+    for (var j in taxes) {
+      impuestos += parseFloat(taxes[j].getAttribute("importe").getValue());
+    }
+    cfdi.impuestos = impuestos.toString();
+
+    // Get the "descuento" if any
+    if ( comprobante.getAttribute("descuento") ) {
+      cfdi.descuento = comprobante.getAttribute("descuento").getValue();
+    }
+
+    cfdi.version = comprobante.getAttribute("version").getValue();
+
+    // Get the "folio fiscal", if any
+    if ( cfdi.version === cfdi_version ) {
+      timbre = comprobante.getChild("Complemento", namespace).getChild("TimbreFiscalDigital", comprobante.getNamespace("tfd"));
+      cfdi.uuid = timbre.getAttribute("UUID").getValue();
+      cfdi.certificacion = timbre.getAttribute("FechaTimbrado").getValue();
+    } else {
+      // Este CFDi no es versión 3, lo cual es ya inaceptable
+      // Report it!
+      SendReportMessage("Error", "\nEl Comprobante Fiscal Digital adjunto es versión menor" +
+                        "a la actual vigente, de modo que no puede ser considerado con un CFDi\n" +
+                        "\n\nA continuación algunos datos del remitente:\n\n" +
+                        "\nBuzón del remitente: " + m.getFrom() +
+                        "\nBuzón del destinatario: " + m.getTo() +
+                        "\nAsunto: " + m.getSubject() +
+                        "\nFecha: " + m.getDate()) +
+                        "\n\nY ahora, algunos datos del CFDi\n\n" +
+                        "\nFecha: " + cfdi.fecha +
+                        "\nClave del R.F.C. del emisor: " + cfdi.rfc +
+                        "\nNombre del emisor: " + cfdi.proveedor +
+                        "\nFolio fiscal: " + cfdi.uuid;
+      // Try to star the message
+      m.star();
+      // Mark the message as unread
+      m.markUnread();
+      continue;
+    }
+
+    cfdi.comprobante = facturas[i].xml_Blob;
+    if ( facturas[i].pdf_Blob ) cfdi.pdf = facturas[i].pdf_Blob;
+
+    result.push(cfdi);
+  }
+
+  return result;
+}
+
+/**
+ * Helper function to send to a mailbox
+ * some error/warning messages
+ * @param {string} message severity level.
+ * @param {string} message description.
+ */
+function SendReportMessage(level, description)
+{
+  GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
+                     "AlmacenaCFDi.gs Mensaje generado automáticamente: " + level,
+                     "AlmacenaCFDi: Mensaje.\n\n" + description);
+}
