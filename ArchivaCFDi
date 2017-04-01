@@ -1,6 +1,6 @@
 /**
- * @license Copyright (c) 2014, L3a,
- *                              Enrique Gámez <egamezf@gmail.com>
+ * @license Copyright (c) 2014,2015, L3a,
+ *                                   Enrique Gámez <egamezf@gmail.com>
  *
  * All rights reserved.
  *
@@ -130,7 +130,7 @@ var default_label = "Gastos";
  * @const
  * @type {string}
  */
-var our_rfc = "XAXX010101000";
+var our_rfc = "GAFA7701266V2";
 /**
  * CFDi actual version
  * @const
@@ -138,6 +138,71 @@ var our_rfc = "XAXX010101000";
  */
 var cfdi_version = "3.2";
 
+/**
+ * La represantacion de los parametros a guardar en la spreadsheet.
+ *
+ * @constructor
+ * @struct
+ * @param {string} La fecha de emision del CFDi
+ * @param {string} El dia de emision del CFDi (util para la creacion de los folders y el almacenamiento)
+ * @param {string} El numero del mes de emision del CFDi
+ * @param {string} El ano de emision del CFDi
+ * @param {string} La fecha del timbrado del CFDi
+ * @param {string} La clave del R.F.C. del emisor del CFDi
+ * @param {string} El nombre del emisor del CFDi
+ * @param {number} El monto total del descuento que ampara el CFDi
+ * @param {number} El monto subtotal del CFDi
+ * @param {number} El monto total de impuestos trasladados
+ * @param {number} El total que ampara el CFDi
+ * @param {string} El metodo de pago usado para liquidar el monto total del CFDi
+ * @param {string} El folio del CFDi
+ * @param {string} La serie del CFDi
+ * @param {GMailAttachment} El CFDi mismo
+ * @param {GMailArrachment|null} La representacion impresa del CFDi
+ * @param {string} El tipo de comprobante (ingreso | egreso)
+ * @param {string} La version del CFDi
+ * @param {string} El folio fiscal del CFDi
+ */
+function CFDi(fecha,
+              dia,
+              mes,
+              anio,
+              certificacion,
+              rfc,
+              proveedor,
+              descuento,
+              subtotal,
+              impuestos,
+              total,
+              metodo_pago,
+              folio,
+              serie,
+              comprobante,
+              pdf,
+              tipo,
+              version,
+              uuid)
+{
+  this.fecha = fecha;                 // La fecha de emisión del CFDi
+  this.dia = dia;                     // El dia en el que fue emitido el CFDi (para uso interno)
+  this.mes = mes;                     // El mes (para uso interno)
+  this.anio = anio;                   // Anio (para uso interno)
+  this.certificacion = certificacion; // La fecha de certificacion del CFDi
+  this.rfc = rfc;                     // Clave del R.F.C. del emisor
+  this.proveedor = proveedor;         // Nombre del emisor
+  this.descuento = descuento;         // Descuentos
+  this.subtotal = subtotal;           // Subtotal del CFDi
+  this.impuestos = impuestos;         // Impuestos
+  this.total = total;                 // Total
+  this.metodo_pago = metodo_pago;     // Metodo de pago
+  this.folio = folio;                 // Folio del CFDi
+  this.serie = serie;                 // Número de serie
+  this.comprobante = comprobante;     // El CFDi
+  this.pdf = pdf;                     // Su representación impresa
+  this.tipo = tipo;                   // Tipo de comprobante ingreso, egreso
+  this.version = version;             // Versión del CFDi
+  this.uuid = uuid;                   // Folio fiscal
+}
 
 function ArchivaCFDi()
 {
@@ -169,6 +234,7 @@ function ArchivaCFDi()
         // Create an array of CFDi objects. One array
         // per message
         cfdis = ExtractCFDis(messages[j]);
+        Logger.log(cfdis);
 
         // Now, you need to process avery CFDi in the current message
         for (var k = 0; k < cfdis.length; k++) {
@@ -259,10 +325,10 @@ function ArchivaCFDi()
                            cfdis[k].proveedor,
                            cfdis[k].rfc,
                            cfdis[k].tipo,
-                           cfdis[k].descuento,
-                           cfdis[k].subtotal,
-                           cfdis[k].impuestos,
-                           cfdis[k].total,
+                           cfdis[k].descuento.toFixed(2),
+                           cfdis[k].subtotal.toFixed(2),
+                           cfdis[k].impuestos.toFixed(2),
+                           cfdis[k].total.toFixed(2),
                            messages[j].getDate(), // Recepcion (del comprobante)
                            "Vigente", // Estado del CFDi
                            xml_file.getUrl(), // CFDi Url
@@ -308,14 +374,18 @@ function LoadFolder(r, a, m)
 {
   var folders = null,
       folder = null,
+      main_folder = null,
+      year_folder = null,
+      month_folder = null,
       found = false;
 
   // Load the list of all folders.
-  folders = DocsList.getRootFolder().getFolders();
+  folders = DriveApp.getRootFolder().getFolders();
 
   // Now loop over all the folders in the root directory and try to find the one we want.
-  for (var i = 0; i < folders.length; i++) {
-    if ( folders[i].getDescription() == r ) {
+  while (folders.hasNext()) {
+    if ( folders.next().getDescription() == r ) {
+      // The root folder exists
       found = true;
       break;
     }
@@ -325,23 +395,30 @@ function LoadFolder(r, a, m)
     // Create one and the others beneath
     SendReportMessage("Atención", "¡El folder raíz (" + r + ") no existe!\n\n" +
                                    "Se creara este folder \"" + r + "\" y todos los demás que sean necesarios.");
-    folder = DocsList.createFolder(r);
-    folder.setDescription(r);
-    var tmp_folder = folder.createFolder(a);
-    tmp_folder.setDescription(a);
-    var temp_folder = tmp_folder.createFolder(m);
-    temp_folder.setDescription(m);
-    folder = DocsList.getFolder(r + "/" + a + "/" + m);
-    return folder;
+    main_folder = DriveApp.createFolder(r);
+    main_folder.setDescription(r);
+    year_folder = main_folder.createFolder(a);
+    year_folder.setDescription(a);
+    month_folder = year_folder.createFolder(m);
+    month_folder.setDescription(m);
+    return month_folder;
   }
 
   // If we are here it is because we have at least one folder 'r'.
   // Now start with the year folder
   found = false;
-  folders = DocsList.getFolder(r).getFolders();
-  for (var i = 0; i < folders.length; i++) {
-    if ( folders[i].getDescription() == a ) {
-      found = true;
+  folders = DriveApp.getRootFolder().getFolders();
+  while (folders.hasNext()) {
+    main_folder = folders.next();
+    if ( main_folder.getDescription() == r ) {
+      // Now, seek for the year folder
+      folders = main_folder.getFolders();
+      while (folders.hasNext()) {
+        if (folders.next().getDescription() == a) {
+          found = true;
+          break;
+        }
+      }
       break;
     }
   }
@@ -349,33 +426,48 @@ function LoadFolder(r, a, m)
   if ( !found ) {
     SendReportMessage("Atención", "¡El folder (" + r + "/" + a + ") no existe!\n\n" +
                                    "Se creara este folder \"" + r + "/" + a + "\" y todos los demás que sean necesarios.");
-    folder = DocsList.getFolder(r).createFolder(a);
-    folder.setDescription(a);
-    var tmp_folder = folder.createFolder(m);
-    tmp_folder.setDescription(m);
-    folder = DocsList.getFolder(r + "/" + a + "/" + m);
-    return folder;
+    year_folder = main_folder.createFolder(a);
+    year_folder.setDescription(a);
+    month_folder = year_folder.createFolder(m);
+    month_folder.setDescription(m);
+    return month_folder;
   }
 
-  // Now the month
+  // Now the month folder
   found = false;
-  folders = DocsList.getFolder(r + "/" + a).getFolders();
-  for (var i = 0; i < folders.length; i++) {
-    if ( folders[i].getDescription() == m ) {
-      found = true;
+  folders = DriveApp.getRootFolder().getFolders();
+  folders = DriveApp.getRootFolder().getFolders();
+  while (folders.hasNext()) {
+    main_folder = folders.next();
+    if ( main_folder.getDescription() == r ) {
+      // Now, seek for the year folder
+      folders = main_folder.getFolders();
+      while (folders.hasNext()) {
+        year_folder = folders.next();
+        if (year_folder.getDescription() == a) {
+          folders = year_folder.getFolders();
+          while (folders.hasNext()) {
+            month_folder = folders.next();
+            if (month_folder.getDescription() == m) {
+              found = true;
+              break;
+            }
+          }
+          break;
+        }
+      }
       break;
     }
   }
 
   if ( !found ) {
-    SendReportMessage("Atención", "¡El folder (" + r + "/" + a + "/" + m + ") no exite!\n\n" +
+    SendReportMessage("Atención", "¡El folder (" + r + "/" + a + "/" + m + ") no existe!\n\n" +
                                    "Se creara el folder \"" + r + "/" + a + "/" + m + "\"");
-    folder = DocsList.getFolder(r + "/" + a).createFolder(m);
-    folder.setDescription(m);
+    month_folder = year_folder.createFolder(m);
+    month_folder.setDescription(m);
   }
 
-  folder = DocsList.getFolder(r + "/" + a + "/" + m);
-  return folder;
+  return month_folder;
 }
 
 /**
@@ -406,6 +498,7 @@ function CheckForDuplicated(sheet, cfd)
     if ( data[i][2].toString() === cfd.serie && data[i][3].toString() === cfd.folio &&
          data[i][4].toString() === cfd.uuid  && data[i][6].toString() === cfd.rfc ) {
       found = true;
+      break;
     }
   }
   // Load all the rows in the sheet.
@@ -433,7 +526,7 @@ function LoadReporteSheet(a, m)
 {
 
   var base_name = root_name + "-" + a + "-" + m;
-  var id = UserProperties.getProperty(base_name + "-key");
+  var id = PropertiesService.getScriptProperties().getProperty(base_name + "-key");
   var sheet = null;
   if ( id != null ) {
     // Simply load the sheet
@@ -441,17 +534,18 @@ function LoadReporteSheet(a, m)
   } else {
     // Create a sheet and save the parameters to the master ss
     var ss = SpreadsheetApp.create(base_name);
+    // Now retrieve the sheet
+    sheet = ss.getActiveSheet();
     // Set the table headers.
-    ss.appendRow(["Fecha emisión", "Versión", "Serie", "Folio", "Folio fiscal",
+    sheet.appendRow(["Fecha emisión", "Versión", "Serie", "Folio", "Folio fiscal",
                   "Proveedor", "R.F.C", "Tipo", "Descuentos", "Subtotal", "Impuestos",
                   "Total", "Recepción", "Fecha pago", "XML-Url", "PDF-Url"]);
     // Make this row looks like a header for the contains.
-    ss.getRange("A1:P1").setBackground("black").setFontColor("white");
+    sheet.getRange("A1:P1").setBackground("black").setFontColor("white");
     id = ss.getId();
     // Save the ss key that you just have created
-    UserProperties.setProperty(base_name + "-key", id);
-    // Now retrieve the sheet
-    sheet = ss.getActiveSheet();
+    PropertiesService.getScriptProperties().setProperty(base_name + "-key", id);
+
   }
 
   return sheet;
@@ -485,7 +579,7 @@ function GetLabelName(rfc)
 {
 
   // Load the user key value
-  var label = UserProperties.getProperty(rfc);
+  var label = PropertiesService.getUserProperties().getProperty(rfc);
   if ( label === null ) label = default_label;
 
   // The label already exist as user property. Check
@@ -519,21 +613,25 @@ function GetLabelName(rfc)
  * Arguments:
  * @param {GmailMessage} m A GmailMessage object
  * Returns:
- *           An array of CFD/CFDis parsed from the
+ *           An array of CFDis parsed from the
  *           message attachments.
  *
- * @return {Array.<Object>}
+ * @return {Array.<CFDi>}
  */
 function ExtractCFDis(m)
 {
   var name = null,
       type = null,
+      moles = null,
       doc = null,
       taxes = null,
       impuestos = 0,
       comprobante = null,
       namespace = null,
       timbre = null,
+      tfd = null,
+      content = null, // the xml BLOB as string
+      bad = null, // The temporary xml BLOB as string to BOM remove procedure
       facturas = [], // Array of documents.
       result = [], // The array of all the cfdis
       att = m.getAttachments();
@@ -554,6 +652,35 @@ function ExtractCFDis(m)
       };
       documento.name = name.substr(0, name.lastIndexOf("."));
       documento.xml_Blob = att[i];
+      Logger.log(att[i]);
+      facturas.push(documento);
+    }
+  }
+
+  // Hay un caso en el que el CFDI y su representacion impresa
+  // tienen un tipo diferente
+  for (var i = 0; i < att.length; i++) {
+    name = att[i].getName();
+    type = att[i].getContentType();
+
+    if ( type === "application/octet-stream" ) {
+
+      var documento = {
+        pdf_Blob: null,
+        xml_Blob: null,
+        name:    null
+      };
+      moles = name.substr(name.lastIndexOf("."), name.length);
+      if ( moles == ".xml" ) {
+        // Este es el CFDI
+        documento.name = name.substr(0, name.lastIndexOf("."));
+        documento.xml_Blob = att[i];
+        Logger.log(att[i]);
+      }
+      if ( moles == ".pdf" || moles == ".PDF" ) {
+        // Esta es la representacion impresa
+        documento.pdf_Blob = att[i];
+      }
       facturas.push(documento);
     }
   }
@@ -577,30 +704,42 @@ function ExtractCFDis(m)
 
   // Now, parse all the real invoices (CFD/CFDis)
   for (var i = 0; i < facturas.length; i++) {
-    var cfdi = {
-      fecha:         "", // La fecha de emisión del CFDi
-      dia:           "", // El dia en el que fue emitido el CFDi (para uso interno)
-      mes:           "", // El mes (para uso interno)
-      anio:          "", // Anio (para uso interno)
-      certificacion: "", // La fecha de certificacion del CFDi
-      rfc:           "", // Clave del R.F.C. del emisor
-      proveedor:     "", // Nombre del emisor
-      descuento:     "", // Descuentos
-      subtotal:      "", // Subtotal del CFDi
-      impuestos:     "", // Impuestos
-      total:         "", // Total
-      metodo_pago:   "", // Metodo de pago
-      folio:         "", // Folio del CFDi
-      serie:         "", // Número de serie
-      comprobante: null, // El CFDi
-      pdf:         null, // Su representación impresa
-      tipo:          "", // Tipo de comprobante ingreso, egreso
-      version:       "", // Versión del CFDi
-      uuid:          ""  // Folio fiscal
-    };
+    var cfdi = new CFDi(
+                        "", // La fecha de emisión del CFDi
+                        "", // El dia en el que fue emitido el CFDi (para uso interno)
+                        "", // El mes (para uso interno)
+                        "", // Anio (para uso interno)
+                        "", // La fecha de certificacion del CFDi
+                        "", // Clave del R.F.C. del emisor
+                        "", // Nombre del emisor
+                        0, // Descuentos
+                        0, // Subtotal del CFDi
+                        0, // Impuestos
+                        0, // Total
+                        "", // Metodo de pago
+                        "", // Folio del CFDi
+                        "", // Número de serie
+                        null, // El CFDi
+                        null, // Su representación impresa
+                        "", // Tipo de comprobante ingreso, egreso
+                        "", // Versión del CFDi
+                        "");  // Folio fiscal
 
-    impuestos = 0, taxes = null, comprobante = null, namespace = null, timbre = null;
-    doc = XmlService.parse(facturas[i].xml_Blob.getDataAsString());
+
+    impuestos = 0, taxes = null, comprobante = null, namespace = null, timbre = null, tfd = null;
+    content = null, bad = null;
+
+    // Now, check if the xml Blob has the BOM mask, if so, remove it
+    bad = facturas[i].xml_Blob.getDataAsString();
+    if ( bad.substr(0, 3) === "<?x" ) {
+      // This is a simple xml instance, just copy
+      content = bad; 
+    } else {
+      // This xml instance may possibly have the BOM try to remove it
+      content = bad.replace("\ufeff", "");
+    }
+
+    doc = XmlService.parse(content);
     comprobante = doc.getRootElement();
     namespace = comprobante.getNamespace();
 
@@ -639,34 +778,42 @@ function ExtractCFDis(m)
 
     cfdi.metodo_pago = comprobante.getAttribute("metodoDePago").getValue();
     cfdi.fecha       = comprobante.getAttribute("fecha").getValue();
-    cfdi.anio        = cfdi.fecha.split("-")[0]
-    cfdi.mes         = cfdi.fecha.split("-")[1]
-    cfdi.dia         = cfdi.fecha.split("-")[2].substr(0, 2)
+    cfdi.anio        = cfdi.fecha.split("-")[0];
+    cfdi.mes         = cfdi.fecha.split("-")[1];
+    cfdi.dia         = cfdi.fecha.split("-")[2].substr(0, 2);
 
     if ( comprobante.getAttribute("tipoDeComprobante") ) {
       cfdi.tipo = comprobante.getAttribute("tipoDeComprobante").getValue();
     }
 
 
-    cfdi.subtotal   = comprobante.getAttribute("subTotal").getValue();
-    cfdi.total      = comprobante.getAttribute("total").getValue();
+    cfdi.subtotal   = parseFloat(comprobante.getAttribute("subTotal").getValue());
+    cfdi.total      = parseFloat(comprobante.getAttribute("total").getValue());
     // Now, we need to make a loop over all the taxes.
     taxes           = comprobante.getChild("Impuestos", namespace).getChild("Traslados", namespace).getChildren("Traslado", namespace);
     for (var j in taxes) {
       impuestos += parseFloat(taxes[j].getAttribute("importe").getValue());
     }
-    cfdi.impuestos = impuestos.toString();
+    cfdi.impuestos = impuestos;
 
     // Get the "descuento" if any
     if ( comprobante.getAttribute("descuento") ) {
-      cfdi.descuento = comprobante.getAttribute("descuento").getValue();
+      cfdi.descuento = parseFloat(comprobante.getAttribute("descuento").getValue());
     }
 
     cfdi.version = comprobante.getAttribute("version").getValue();
 
     // Get the "folio fiscal", if any
     if ( cfdi.version === cfdi_version ) {
-      timbre = comprobante.getChild("Complemento", namespace).getChild("TimbreFiscalDigital", comprobante.getNamespace("tfd"));
+      // There it is the chance that this CFDi doesn't have declared
+      // the 'tfd' namespace in the root node, if this is the case you
+      // have to create one namespace.
+      if ( comprobante.getNamespace("tfd") == null ) {
+        tfd = XmlService.getNamespace("tfd", "http://www.sat.gob.mx/TimbreFiscalDigital");
+      } else {
+        tfd = comprobante.getNamespace("tfd");
+      }
+      timbre = comprobante.getChild("Complemento", namespace).getChild("TimbreFiscalDigital", tfd);
       cfdi.uuid = timbre.getAttribute("UUID").getValue();
       cfdi.certificacion = timbre.getAttribute("FechaTimbrado").getValue();
     } else {
@@ -708,7 +855,8 @@ function ExtractCFDis(m)
  */
 function SendReportMessage(level, description)
 {
-  GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
+  //GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
+  GmailApp.sendEmail(Session.getActiveUser().getEmail(),
                      "AlmacenaCFDi.gs Mensaje generado automáticamente: " + level,
                      "AlmacenaCFDi: Mensaje.\n\n" + description);
 }
