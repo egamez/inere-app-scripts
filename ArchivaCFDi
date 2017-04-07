@@ -1,5 +1,5 @@
 /**
- * @license Copyright (c) 2014,2015, L3a,
+ * @license Copyright (c) 2014-2017, L3a,
  *                                   Enrique Gámez <egamezf@gmail.com>
  *
  * All rights reserved.
@@ -234,7 +234,6 @@ function ArchivaCFDi()
         // Create an array of CFDi objects. One array
         // per message
         cfdis = ExtractCFDis(messages[j]);
-        Logger.log(cfdis);
 
         // Now, you need to process avery CFDi in the current message
         for (var k = 0; k < cfdis.length; k++) {
@@ -579,7 +578,9 @@ function GetLabelName(rfc)
 {
 
   // Load the user key value
-  var label = PropertiesService.getUserProperties().getProperty(rfc);
+  var props = PropertiesService.getUserProperties();
+  Logger.log(props);
+  var label = props.getProperty(rfc);
   if ( label === null ) label = default_label;
 
   // The label already exist as user property. Check
@@ -675,13 +676,12 @@ function ExtractCFDis(m)
         // Este es el CFDI
         documento.name = name.substr(0, name.lastIndexOf("."));
         documento.xml_Blob = att[i];
-        Logger.log(att[i]);
+        facturas.push(documento);
       }
       if ( moles == ".pdf" || moles == ".PDF" ) {
         // Esta es la representacion impresa
         documento.pdf_Blob = att[i];
       }
-      facturas.push(documento);
     }
   }
 
